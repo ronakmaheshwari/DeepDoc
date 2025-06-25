@@ -12,4 +12,71 @@ generator client {
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model User {
+  id        String     @id @default(uuid())
+  username  String
+  email     String     @unique
+  password  String
+  otp       Otp?
+  link      Link?
+  pdfFiles  PdfFile[]
+  sessions  ChatSession[]
+}
+
+model Otp {
+  id        String   @id @default(uuid())
+  userId    String   @unique
+  otp       Int
+  expiresAt DateTime @default(dbgenerated("(now() + interval '10 minutes')"))
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Link {
+  id     String @id @default(uuid())
+  userId String @unique
+  hash   String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model PdfFile {
+  id        String        @id @default(uuid())
+  userId    String
+  name      String
+  url       String
+  createdAt DateTime      @default(now())
+  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sessions  ChatSession[]
+  @@index([userId])
+  @@unique([userId, name])
+}
+
+model ChatSession {
+  id        String         @id @default(uuid())
+  userId    String
+  pdfId     String
+  title     String         @default("New Chat")
+  createdAt DateTime       @default(now())
+  chats     ChatMessage[]
+  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  pdf       PdfFile        @relation(fields: [pdfId], references: [id], onDelete: Cascade)
+  @@index([userId])
+  @@index([pdfId])
+}
+
+model ChatMessage {
+  id          String      @id @default(uuid())
+  sessionId   String
+  role        RoleSchema
+  content     String
+  createdAt   DateTime    @default(now())
+  chatSession ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  @@index([sessionId])
+}
+
+enum RoleSchema {
+  user
+  assistant
 }
