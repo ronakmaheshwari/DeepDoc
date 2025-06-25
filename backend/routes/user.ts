@@ -1,11 +1,12 @@
 import express from "express"
 import bcrypt from "bcrypt"
 import jwt from "jsonwebtoken"
-import { SignupSchema } from "../utils/types"
+import { OtpSchema, SigninSchema, SignupSchema } from "../utils/types"
 import prisma from "../prisma/prisma"
 import dotenv from "dotenv"
 import { Resend } from "resend";
 import OtpGenerator from "../utils/utils"
+import { userMiddleware } from "../middleware"
 dotenv.config();
 
 const userRouter = express.Router()
@@ -52,63 +53,155 @@ const OTPEmailTemplate = (email: string, otp: number) => `
   </html>
 `;
 
-userRouter.post("/signup",async(req:any,res:any)=>{
+userRouter.post("/signup", async (req: any, res: any) => {
     try {
         const parsed = SignupSchema.safeParse(req.body);
-        if(!parsed.success){
+        if (!parsed.success) {
             return res.status(400).json({
-                message:"Invalid User Inputs provided",
-                error: parsed.error.errors
-            })
+                message: "Invalid input",
+                error: parsed.error.errors,
+            });
         }
-        const {username,email,password} = parsed.data
-        const ExistingUser = await prisma.user.findUnique({
-            where:{
-                email
-            }
-        })
-        if(ExistingUser){
-            return res.status(404).json({
-                message:"User already exists"
-            })
+
+        const { username, email, password } = parsed.data;
+
+        const existingUser = await prisma.user.findUnique({ where: { email } });
+        if (existingUser) {
+            return res.status(409).json({ message: "User already exists" });
         }
-        const hashedPassword = await bcrypt.hash(password,saltround);
+
+        const hashedPassword = await bcrypt.hash(password, saltround);
+        const newUser = await prisma.user.create({
+            data: { username, email, password: hashedPassword },
+        });
+
         const otp = parseInt(OtpGenerator(5) as string);
-        const response = await prisma.user.create({
-            data:{
-                username,email,password:hashedPassword
-            }
-        })
         await prisma.otp.upsert({
-            where: { userId: response.id },
+            where: { userId: newUser.id },
             update: {
                 otp,
                 expiresAt: new Date(Date.now() + 10 * 60 * 1000),
             },
             create: {
-                userId: response.id,
+                userId: newUser.id,
                 otp,
             },
         });
-        
-        const html = OTPEmailTemplate(response.email, otp);
+
+        const html = OTPEmailTemplate(email, otp);
         await resend.emails.send({
             from: "onboarding@hire.10xdevs.me",
-            to: response.email,
-            subject: "You've Got the OTP from DeepDoc!",
+            to: email,
+            subject: "Your DeepDoc OTP",
             html,
         });
-        const token = jwt.sign({ userId: response.id }, JWTSecret, { expiresIn: "1d" });
+
+        const tempToken = jwt.sign({ userId: newUser.id }, JWTSecret, {
+            expiresIn: "10m",
+        });
+
         return res.status(200).json({
-            message:"User Successfully Created",
-            token:token
-        })
+            message: "Signup successful. Please verify OTP.",
+            token: tempToken,
+        });
     } catch (error) {
-        console.error("Error occured at Signup")
-        return res.status(500).json({
-            message:"Internal Error Occured"
-        })
+        console.error("Signup Error:", error);
+        return res.status(500).json({ message: "Internal server error" });
     }
-})
+});
+
+userRouter.post("/signin", async (req: any, res: any) => {
+    try {
+        const parsed = SigninSchema.safeParse(req.body);
+        if (!parsed.success) {
+            return res.status(400).json({
+                message: "Invalid input",
+                error: parsed.error.errors,
+            });
+        }
+
+        const { email, password } = parsed.data;
+
+        const user = await prisma.user.findUnique({ where: { email } });
+        if (!user) {
+            return res.status(404).json({ message: "User not found" });
+        }
+
+        const isPasswordCorrect = await bcrypt.compare(password, user.password);
+        if (!isPasswordCorrect) {
+            return res.status(401).json({ message: "Incorrect password" });
+        }
+
+        const otp = parseInt(OtpGenerator(5) as string);
+        await prisma.otp.upsert({
+            where: { userId: user.id },
+            update: {
+                otp,
+                expiresAt: new Date(Date.now() + 10 * 60 * 1000),
+            },
+            create: {
+                userId: user.id,
+                otp,
+            },
+        });
+
+        const html = OTPEmailTemplate(email, otp);
+        await resend.emails.send({
+            from: "onboarding@hire.10xdevs.me",
+            to: email,
+            subject: "Your DeepDoc OTP",
+            html,
+        });
+
+        const tempToken = jwt.sign({ userId: user.id }, JWTSecret, {
+            expiresIn: "10m",
+        });
+
+        return res.status(200).json({
+            message: "Signin successful. Please verify OTP.",
+            token: tempToken,
+        });
+    } catch (error) {
+        console.error("Signin Error:", error);
+        return res.status(500).json({ message: "Internal server error" });
+    }
+});
+
+userRouter.post("/verify", userMiddleware, async (req: any, res: any) => {
+  try {
+    const parsed = OtpSchema.safeParse(pa)
+    const userId = req.userId;
+
+    if (!otp || !userId) {
+      return res.status(400).json({ message: "OTP is required" });
+    }
+
+    const otpEntry = await prisma.otp.findUnique({
+      where: { userId },
+    });
+
+    if (!otpEntry || otpEntry.otp !== parseInt(otp)) {
+      return res.status(400).json({ message: "Invalid OTP" });
+    }
+
+    if (otpEntry.expiresAt < new Date()) {
+      return res.status(400).json({ message: "OTP expired" });
+    }
+
+    await prisma.otp.delete({ where: { userId } });
+
+    const finalToken = jwt.sign({ userId, stage: "verified" }, JWTSecret, {
+      expiresIn: "1d",
+    });
+
+    return res.status(200).json({
+      message: "OTP verified. Logged in.",
+      token: finalToken,
+    });
+  } catch (error) {
+    console.error("OTP verify error:", error);
+    return res.status(500).json({ message: "Server error" });
+  }
+});
 
 export default userRouter
