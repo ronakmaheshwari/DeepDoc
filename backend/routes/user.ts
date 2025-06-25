@@ -169,9 +169,15 @@ userRouter.post("/signin", async (req: any, res: any) => {
 
 userRouter.post("/verify", userMiddleware, async (req: any, res: any) => {
   try {
-    const parsed = OtpSchema.safeParse(pa)
+    const parsed = OtpSchema.safeParse(parseInt(req.body as string))
     const userId = req.userId;
-
+    if(!parsed.success){
+      return res.status(400).json({
+        message: "Invalid input",
+        error: parsed.error.errors,
+      })
+    }
+    const {otp} = parsed.data;
     if (!otp || !userId) {
       return res.status(400).json({ message: "OTP is required" });
     }
@@ -180,7 +186,7 @@ userRouter.post("/verify", userMiddleware, async (req: any, res: any) => {
       where: { userId },
     });
 
-    if (!otpEntry || otpEntry.otp !== parseInt(otp)) {
+    if (!otpEntry || otpEntry.otp !== otp) {
       return res.status(400).json({ message: "Invalid OTP" });
     }
 
