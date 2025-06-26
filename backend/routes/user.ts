@@ -1,12 +1,13 @@
 import express from "express"
 import bcrypt from "bcrypt"
 import jwt from "jsonwebtoken"
-import { OtpSchema, SigninSchema, SignupSchema } from "../utils/types"
-import prisma from "../prisma/prisma"
 import dotenv from "dotenv"
 import { Resend } from "resend";
-import OtpGenerator from "../utils/utils"
-import { userMiddleware } from "../middleware"
+import { Otpschema, SigninSchema, SignupSchema } from "../utils/types";
+import prisma from "../lib/prisma/prisma";
+import OtpGenerator from "../utils/otp";
+import { userMiddleware } from "../utils/middleware";
+
 dotenv.config();
 
 const userRouter = express.Router()
@@ -169,7 +170,7 @@ userRouter.post("/signin", async (req: any, res: any) => {
 
 userRouter.post("/verify", userMiddleware, async (req: any, res: any) => {
   try {
-    const parsed = OtpSchema.safeParse(parseInt(req.body as string))
+    const parsed = Otpschema.safeParse(parseInt(req.body as string))
     const userId = req.userId;
     if(!parsed.success){
       return res.status(400).json({
