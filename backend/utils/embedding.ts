@@ -8,24 +8,24 @@ const cohere = new CohereClient({
   token: process.env.Embedding_Key!,
 });
 
-export async function embedding({ text }: { text: string[] }): Promise<number[][]> {
-    try {
-        const embed = await cohere.v2.embed({
-            texts:text,
-            model: 'embed-v4.0',
-            inputType: 'classification',
-            embeddingTypes: ['float'],
-        })
-        console.log(`🧬 Got ${embed.embeddings?.float?.length} embeddings.`);
-        return embed.embeddings.float ?? []
-    } catch (error) {
-        console.log("Error at Embedding",error)
-        return [];
-    }
+export async function embedding(text: string[]): Promise<number[][]> {
+  try {
+    const embed = await cohere.v2.embed({
+      texts: text,
+      model: "embed-v4.0",
+      inputType: "classification",
+      embeddingTypes: ["float"],
+    });
+    console.log(`🧬 Got ${embed.embeddings?.float?.length} embeddings.`);
+    return embed.embeddings.float ?? [];
+  } catch (error) {
+    console.log("Error at Embedding", error);
+    return [];
+  }
 }
 
 export default async function getQueryEmbed(query:string): Promise<string> {
-    const embed = await embedding({ text: [query] });
+    const embed = await embedding([query]);
 
     if(!embed || !embed.length){
         throw new Error("Embedding failed or returned empty"); 
