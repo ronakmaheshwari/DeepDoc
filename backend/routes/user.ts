@@ -12,10 +12,10 @@ dotenv.config();
 
 const userRouter = express.Router()
 const JWTSecret = process.env.JWTSecret || "";
-const saltround = process.env.Saltrounds || 10;
+const saltround = parseInt(process.env.Saltrounds || "10", 10);
 const resend = new Resend(process.env.Resend_Key || "");
 
-const OTPEmailTemplate = (email: string, otp: number) => `
+const OTPEmailTemplate = (email: string, otp: string) => `
   <!DOCTYPE html>
   <html lang="en">
   <head>
@@ -76,7 +76,7 @@ userRouter.post("/signup", async (req: any, res: any) => {
             data: { username, email, password: hashedPassword },
         });
 
-        const otp = parseInt(OtpGenerator(5) as string);
+        const otp = OtpGenerator(5);
         await prisma.otp.upsert({
             where: { userId: newUser.id },
             update: {
@@ -133,7 +133,8 @@ userRouter.post("/signin", async (req: any, res: any) => {
             return res.status(401).json({ message: "Incorrect password" });
         }
 
-        const otp = parseInt(OtpGenerator(5) as string);
+        const otp = OtpGenerator(5);
+
         await prisma.otp.upsert({
             where: { userId: user.id },
             update: {
@@ -170,7 +171,7 @@ userRouter.post("/signin", async (req: any, res: any) => {
 
 userRouter.post("/verify", userMiddleware, async (req: any, res: any) => {
   try {
-    const parsed = Otpschema.safeParse(parseInt(req.body as string))
+    const parsed = Otpschema.safeParse(req.body);
     const userId = req.userId;
     if(!parsed.success){
       return res.status(400).json({

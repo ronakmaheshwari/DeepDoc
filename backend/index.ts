@@ -15,5 +15,5 @@ app.use(cors())
 app.use("/api/v1",router);
 
 app.listen(port,()=>{
-    console.log(`DeepDoc is running on ${port}`)
+    console.log(`DeepDoc is running on http://localhost:${port}/api/v1/`)
 })

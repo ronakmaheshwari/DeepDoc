@@ -1,12 +1,15 @@
-export default function OtpGenerator(length:number){
-    try {
-        let curr = ""
-        const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ123456789"
-        for(let i=0;i<length;i++){
-            curr+=letters.charAt(Math.floor(Math.random()*letters.length));
-        }
-        return curr;
-    } catch (error) {
-        console.error("Error occured at OtpGeneration")
+export default function OtpGenerator(length: number): string {
+  try {
+    let otp = "";
+    const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+
+    for (let i = 0; i < length; i++) {
+      otp += chars.charAt(Math.floor(Math.random() * chars.length));
     }
+
+    return otp;
+  } catch (error) {
+    console.error("Error occurred during OTP generation:", error);
+    return ""; // fallback to avoid undefined return
+  }
 }
