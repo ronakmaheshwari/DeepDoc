@@ -1,8 +1,9 @@
 import dotenv from "dotenv";
 import { createUploadthing, type FileRouter } from "uploadthing/express";
-import prisma from "../lib/prisma/prisma";
+import jwt from "jsonwebtoken";
 import axios from "axios";
 import pdf from "pdf-parse-fork";
+import prisma from "../lib/prisma/prisma";
 import chunkText from "./chunkText";
 import embedding from "./embedding";
 import insertChunk from "./supabase";
@@ -13,48 +14,68 @@ const f = createUploadthing();
 
 export const uploadRouter = {
   pdfUploader: f({
-    pdf: {
+    "application/pdf": {
       maxFileSize: "16MB",
       maxFileCount: 1,
     },
-  }).onUploadComplete(async ({ file, metadata }: { file: any; metadata?: { userId?: string } }) => {
-    const userId = metadata?.userId;
+  }).middleware(async ({ req }) => {
+      console.log("🚨 HIT UploadThing middleware");
+      const authHeader = req.headers.authorization;
+      const token = authHeader?.split(" ")[1];
 
-    if (!userId) {
-      throw new Error("userId is required to upload PDF.");
-    }
+      if (!token) throw new Error("No token provided");
 
-    const name = file.name;
+      try {
+        const decoded = jwt.verify(token, process.env.JWTSecret!) as {
+          userId: string;
+        };
 
-    const storePdf = await prisma.pdfFile.create({
-      data: {
-        userId,
-        name,
-        url: file.url,
-      },
-    });
+        return { userId: decoded.userId }; // 👈 passed as metadata to onUploadComplete
+      } catch (err) {
+        throw new Error("Invalid token");
+      }
+    })
 
-    const sessionCreation = await prisma.chatSession.create({
-      data: {
-        userId,
-        pdfId: storePdf.id,
-      },
-    });
+    .onUploadComplete(async ({ file, metadata }) => {
+      try {
+        console.log("✅ HIT onUploadComplete");
+        console.log("metadata", metadata, "file", file);
+        if (!file || !file.name || !file.url || !metadata?.userId) {
+          console.error("Missing fields", { file, metadata });
+          throw new Error("Invalid input format");
+        }
+        const userId = metadata.userId;
+        if (!userId) throw new Error("userId missing in metadata");
 
-    const buffer = await axios.get(`${file.url}`, { responseType: "arraybuffer" });
-    const data = buffer.data;
-    const text = (await pdf(data)).text;
+        const storePdf = await prisma.pdfFile.create({
+          data: {
+            userId,
+            name: file.name,
+            url: file.url,
+          },
+        });
 
-    const chunk = await chunkText({ text, maxLen: 500 });
+        const session = await prisma.chatSession.create({
+          data: {
+            userId,
+            pdfId: storePdf.id,
+          },
+        });
 
-    const embeder = await Promise.all(
-      (chunk?.map((x) => embedding(x.text)) ?? [])
-    );
+        const response = await axios.get(file.url, { responseType: "arraybuffer" });
+        const text = (await pdf(response.data)).text;
 
-    await insertChunk(chunk, embeder, storePdf.id);
+        const chunks = await chunkText({ text, maxLen: 500 }) ?? [];
+        const embeddings = await Promise.all(chunks.map((c) => embedding(c.text)));
 
-    return { sessionId: sessionCreation.id };
-  }),
+        await insertChunk(chunks, embeddings, storePdf.id);
+
+        return { sessionId: session.id };
+      } catch (err) {
+        console.error("UploadThing error:", err);
+        throw new Error("UploadThing failed");
+      }
+    }),
 } satisfies FileRouter;
 
 export type OurFileRouter = typeof uploadRouter;
