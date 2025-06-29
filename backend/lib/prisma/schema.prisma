@@ -50,7 +50,7 @@ model PdfFile {
   user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   sessions  ChatSession[]
   @@index([userId])
-  @@unique([userId, name])
+  // @@unique([userId, name])
 }
 
 model ChatSession {

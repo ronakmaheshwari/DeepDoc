@@ -5,10 +5,11 @@ import axios from "axios";
 import pdf from "pdf-parse-fork";
 import prisma from "../lib/prisma/prisma";
 import chunkText from "./chunkText";
-import embedding from "./embedding";
-import insertChunk from "./supabase";
+import { Embedder } from "./embedding";
+import insertChunkBatched from "./supabase";
 
 dotenv.config();
+console.log("UPLOADTHING_SECRET:", process.env.UPLOADTHING_TOKEN);
 
 const f = createUploadthing();
 
@@ -18,8 +19,8 @@ export const uploadRouter = {
       maxFileSize: "16MB",
       maxFileCount: 1,
     },
-  }).middleware(async ({ req }) => {
-      console.log("🚨 HIT UploadThing middleware");
+  })
+    .middleware(async ({ req }) => {
       const authHeader = req.headers.authorization;
       const token = authHeader?.split(" ")[1];
 
@@ -30,28 +31,25 @@ export const uploadRouter = {
           userId: string;
         };
 
-        return { userId: decoded.userId }; // 👈 passed as metadata to onUploadComplete
+        return { userId: decoded.userId };
       } catch (err) {
+        console.error("❌ Invalid token", err);
         throw new Error("Invalid token");
       }
     })
-
     .onUploadComplete(async ({ file, metadata }) => {
       try {
-        console.log("✅ HIT onUploadComplete");
-        console.log("metadata", metadata, "file", file);
-        if (!file || !file.name || !file.url || !metadata?.userId) {
-          console.error("Missing fields", { file, metadata });
+        if (!file || !file.name || !file.ufsUrl || !metadata?.userId) {
           throw new Error("Invalid input format");
         }
+
         const userId = metadata.userId;
-        if (!userId) throw new Error("userId missing in metadata");
 
         const storePdf = await prisma.pdfFile.create({
           data: {
             userId,
             name: file.name,
-            url: file.url,
+            url: file.ufsUrl,
           },
         });
 
@@ -62,17 +60,19 @@ export const uploadRouter = {
           },
         });
 
-        const response = await axios.get(file.url, { responseType: "arraybuffer" });
+        const response = await axios.get(file.ufsUrl, { responseType: "arraybuffer" });
         const text = (await pdf(response.data)).text;
 
         const chunks = await chunkText({ text, maxLen: 500 }) ?? [];
-        const embeddings = await Promise.all(chunks.map((c) => embedding(c.text)));
-
-        await insertChunk(chunks, embeddings, storePdf.id);
-
+        const chunkTexts = chunks.map((c) => c.text);
+        const embed = await Embedder(chunkTexts); 
+        console.log(embed.length);
+        await insertChunkBatched(chunks, embed, storePdf.id);
+        console.log("✅ Upload processing complete");
+        console.log(session.id)
         return { sessionId: session.id };
       } catch (err) {
-        console.error("UploadThing error:", err);
+        console.error("❌ UploadThing error:", err);
         throw new Error("UploadThing failed");
       }
     }),

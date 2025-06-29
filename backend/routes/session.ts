@@ -11,6 +11,16 @@ dotenv.config();
 
 const sessionRouter = express.Router();
 
+sessionRouter.post("/notify", userMiddleware, async (req:any, res:any) => {
+  const { sessionId } = req.body;
+
+  if (!sessionId) return res.status(400).json({ error: "Missing sessionId" });
+
+  console.log("📥 Session received:", sessionId);
+
+  return res.status(200).json({ message: "Received sessionId" });
+});
+
 sessionRouter.post("/rename/:sessionId", userMiddleware, async (req: any, res: any) => {
   try {
     const sessionId = req.params.sessionId;

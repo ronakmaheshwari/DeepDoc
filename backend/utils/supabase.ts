@@ -2,34 +2,48 @@ import {createClient} from "@supabase/supabase-js"
 import dotenv from "dotenv"
 dotenv.config()
 
-export const supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_KEY!);
+export const supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
 
-if(!process.env.SUPABASE_URL || !process.env.SUPABASE_KEY){
-    throw new Error("Missing SUPABASE_URL or SUPABASE_KEY environment variable");
+interface Chunk {
+  id: string;
+  text: string;
 }
 
-export default async function insertChunk(
-    chunks: any,
-    embedding: any[],
-    pdfId: string
+interface PdfChunkRow {
+  id: string;
+  content: string;
+  embedding: number[];
+  pdf_id: string;
+}
+
+export default async function insertChunkBatched(
+  chunks: Chunk[],
+  embeddings: (number[] | undefined)[],
+  pdfId: string
 ) {
-    interface Chunk {
-        id: string;
-        text: string;
-    }
+  const rows = chunks
+    .map((chunk, i) => {
+      const embedding = embeddings[i];
+      if (!embedding) return null;
 
-    interface PdfChunkRow {
-        id: string;
-        content: string;
-        embedding: any;
-        pdfId: string;
-    }
+      return {
+        id: chunk.id,
+        content: chunk.text,
+        embedding,
+        pdf_id: pdfId,
+      };
+    })
+    .filter((row): row is PdfChunkRow => row !== null);
 
-    const rows: PdfChunkRow[] = (chunks as Chunk[]).map((c: Chunk, i: number): PdfChunkRow => ({
-        id: c.id,
-        content: c.text,
-        embedding: embedding[i],
-        pdfId
-    }));
-    await supabase.from("pdf_chunks").insert(rows);
+  const BATCH_SIZE = 100;
+
+  for (let i = 0; i < rows.length; i += BATCH_SIZE) {
+    const batch = rows.slice(i, i + BATCH_SIZE);
+    const { error } = await supabase.from("pdf_chunks").insert(batch);
+    if (error) {
+      console.error(`❌ Batch insert failed at index ${i}:`, error);
+      return;
+    }
+    console.log(`✅ Inserted batch ${i / BATCH_SIZE + 1}`);
+  }
 }

@@ -8,8 +8,7 @@ import sessionRouter from "./session";
 const router = express.Router()
 
 router.use("/user",userRouter);
-console.log("✅ UploadThing router registered at /uploadthing");
-router.use("/uploadthing",createRouteHandler({router:uploadRouter}))
+router.use("/uploadthing", createRouteHandler({ router: uploadRouter }));
 router.use("/chat",chatRouter)
 router.use("/session",sessionRouter)
 
